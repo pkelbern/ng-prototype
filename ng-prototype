@@ -1,0 +1,412 @@
+//normal prototypes functions
+// they don't need any angular modules
+var datePrototype = Date.prototype;
+if (datePrototype) {
+    if (!datePrototype.isValid) {
+        datePrototype.isValid = function () {
+            return !isNaN(this.getTime());
+        }
+    }
+
+    if (!datePrototype.compare) {
+        datePrototype.compare = function (d) {
+            if (angular.isDate(d)) {
+                return this.getTime() - d.getTime();
+            }
+            return NaN;
+        }
+    }
+
+    if (!datePrototype.equals) {
+        datePrototype.equals = function (d) {
+            return this.compare(d) == 0;
+        }
+    }
+}
+
+var stringPrototype = String.prototype;
+if (stringPrototype) {
+    if (!stringPrototype.startsWith) {
+        stringPrototype.startsWith = function (suffix) {
+            return this.indexOf(suffix, 0) === 0;
+        }
+    }
+
+    if (!stringPrototype.endsWith) {
+        stringPrototype.endsWith = function (suffix) {
+            return this.indexOf(suffix, this.length - suffix.length) !== -1;
+        }
+    }
+
+    if (!stringPrototype.toNumber) {
+        stringPrototype.toNumber = function () {
+            return this.replace(/\D/gi, '');
+        }
+    }
+    if (!stringPrototype.insert) {
+        stringPrototype.insert = function (index, string) {
+            var me = this, len = me.length;
+            if (index > 0) {
+                if (index > len) {
+                    return me + string;
+                }
+                return me.substring(0, index) + string + me.substring(index, len);
+            }
+            else {
+                return string + me;
+            }            
+        }
+    }
+}
+
+var arrayPrototype = Array.prototype;
+if (arrayPrototype) {
+
+    if (!arrayPrototype.contains) {
+        arrayPrototype.contains = function (obj) {
+            return this.indexOf(obj) != -1
+        }
+    }
+    if (!arrayPrototype.move) {
+        arrayPrototype.move = function (old_index, new_index) {
+            while (old_index < 0) {
+                old_index += this.length;
+            }
+            while (new_index < 0) {
+                new_index += this.length;
+            }
+            if (new_index >= this.length) {
+                var k = new_index - this.length;
+                while ((k--) + 1) {
+                    this.push(undefined);
+                }
+            }
+            this.splice(new_index, 0, this.splice(old_index, 1)[0]);
+            return this; 
+        }
+    }
+
+    if (!arrayPrototype.removeAt) {
+        arrayPrototype.removeAt = function (index) {
+            this.splice(index, 1);
+            return this;
+        }
+    }
+}
+
+angular.module('ng-prototype', []).run(['$filter', function ($filter) {
+
+    if (datePrototype) {
+        if (!datePrototype.format) {
+            datePrototype.format = function (format) {
+                return $filter('date')(this, format);
+            }
+        }
+
+        if (!datePrototype.toISODateString) {
+            datePrototype.toISODateString = function () {
+                return this.format('yyyy-MM-dd');
+            }
+
+        }
+        if (!datePrototype.format) {
+            datePrototype.format = function (dformat) {
+                return $filter('date')(this, dformat);
+            }
+        }
+    }
+
+    if (arrayPrototype) {
+
+
+        var fnProp = function (prop, objValue) {
+            var trueValue = true;
+            var falseValue = false;
+
+            if (prop.startsWith('!')) {
+                prop = prop.substring(1, prop.length);
+                trueValue = !trueValue;
+                falseValue = !falseValue;
+            }
+
+            return function (o) {
+                var v = o[prop];
+                if (!objValue) {
+                    v = (v ? trueValue : falseValue);
+                }
+                return v;
+            }
+        }
+
+        if (!arrayPrototype.orderBy) {
+            arrayPrototype.orderBy = function (expression, reverse, comparator) {
+                return $filter('orderBy')(this, expression, reverse, comparator);
+            }
+        }
+
+        if (!arrayPrototype.groupBy) {
+            arrayPrototype.groupBy = function (property, returnObject) {
+                var fn = property;
+                if (angular.isString(fn)) {
+                    fn = fnProp(fn, true);
+                }
+
+                var ret = { $keys: [] }, me = this, arrayRet = [];
+                for (var i = 0; i < me.length; i++) {
+                    var key = fn(me[i], i, me);
+
+                    if (!ret[key]) {
+                        ret[key] = []
+                        ret.$keys.push(key)
+                    }
+
+                    ret[key].push(me[i]);
+                }
+
+                if (returnObject !== false) {
+                    return ret;
+                }
+
+                for (var name in ret) {
+                    if (ret.hasOwnProperty(name) && name != '$keys') {
+                        arrayRet.push(ret[name])
+                    }
+                }
+                return arrayRet;
+            }
+        }
+        
+        
+        var fnFilter = function (prop, array) {
+            // problemas usando a funcao para multiplos objetos e para datas
+            //   return $filter('filter')(array, prop, true)
+
+            var keys = Object.keys(prop);
+            return function (obj) {
+                for (var i = 0; i < keys.length; i++) {
+                    var propName = keys[i];
+                    var p = prop[propName];
+                    var v = obj[propName];
+                    if (angular.isDate(p)) {
+                        if (!p.equals(v)) {
+                            return false;
+                        }
+                    }
+                    else if (p != v) {
+                        return false;
+                    }
+                }
+                return true;
+            }
+        };
+        
+        var trueFn = function () { return true; };
+        if (!arrayPrototype.getIndexOf) {
+
+            arrayPrototype.getIndexOf = function (fn) {
+                var array = [], obj, me = this;
+                fn = fn || trueFn;
+
+                if (angular.isString(fn)) {
+                    fn = fnProp(fn);
+                }
+                else if (angular.isObject(fn)) {
+                    fn = fnFilter(fn, this);
+                }
+                for (var i = 0; i < me.length; i++) {
+                    obj = me[i];
+                    if (fn(obj, i, me, array)) {
+                        return i;
+                    }
+                }
+                return -1;
+            }
+        }
+
+        if (!arrayPrototype.where) {
+
+            arrayPrototype.where = function (fn, skip, take) {
+
+                var array = [], obj, me = this;
+                fn = fn || trueFn;
+
+                if (angular.isString(fn)) {
+                    fn = fnProp(fn);
+                }
+                else if (angular.isObject(fn)) {
+                    fn = fnFilter(fn, this);
+                }
+                if (isNaN(skip) || skip < 0) {
+                    skip = 0;
+                }
+                if (isNaN(take) || take <= 0) {
+                    take = -1; // all
+                }
+
+                for (var i = 0; i < me.length; i++) {
+                    obj = me[i];
+                    if (fn(obj, i, me, array)) {
+                        if (skip == 0) {
+                            array.push(obj);
+                            if (take == array.length) {
+                                break;
+                            }
+                        }
+                        else {
+                            skip--;
+                        }
+                    }
+                }
+                return array;
+            }
+        }
+
+        if (!arrayPrototype.skip) {
+            arrayPrototype.skip = function (sk, fn) {
+                return this.where(fn, sk, -1);
+            }
+        }
+
+        if (!arrayPrototype.take) {
+            arrayPrototype.take = function (max, fn) {
+                return this.where(fn, 0, max);
+            }
+        }
+
+        if (!arrayPrototype.count) {
+            arrayPrototype.count = function (fn) {
+                return this.where(fn).length;
+            }
+        }
+
+        if (!arrayPrototype.firstOrDefault) {
+            arrayPrototype.firstOrDefault = function (fn) {
+                var ret = this.where(fn, 0, 1);
+                return ret.length == 0 ? null : ret[0];
+            }
+        }
+
+        if (!arrayPrototype.any) {
+            arrayPrototype.any = function (fn) {
+                return this.firstOrDefault(fn) != null;
+            }
+        }
+
+        if (!arrayPrototype.all) {
+            arrayPrototype.all = function (fn) {
+                return this.where(fn).length == this.length;
+            }
+        }
+
+        if (!arrayPrototype.select) {
+            arrayPrototype.select = function (fn) {
+                var array = [], me = this;
+                if (angular.isString(fn)) {
+                    fn = fnProp(fn, true);
+                }
+                fn = fn || angular.identity;
+                for (var i = 0; i < me.length; i++) {
+                    var o = fn(me[i], i, me);
+                    array.push(o);
+                }
+                return array;
+            }
+        }
+
+        if (!arrayPrototype.max) {
+            arrayPrototype.max = function (fn) {
+                var out, me = this.select(fn);
+
+                for (var i = 0; i < me.length; i++) {
+                    v = me[i];
+                    if (v > out || out === undefined || out === null) {
+                        out = v;
+                    }
+                }
+                return out;
+            }
+        }
+
+        if (!arrayPrototype.sum) {
+            arrayPrototype.sum = function (fn) {
+
+                var out = 0, me = this.select(fn);
+
+                for (var i = 0; i < me.length; i++) {
+                    out += me[i] || 0;
+                }
+                return out;
+            }
+        }
+
+        if (!arrayPrototype.distinct) {
+            var fnEqNull = function (o, o2) { return o == o2 };
+            var fnEqProp = function (o, o2, prop) { return o[prop] == o2[prop] };
+
+            arrayPrototype.distinct = function (fnEq) {
+
+                var eq = fnEqNull, val = '';
+                if (angular.isString(fnEq)) {
+                    eq = fnEqProp;
+                    val = fnEq;
+                }
+                else if (fnEq) {
+                    eq = fnEq;
+                }
+
+                var keyFn = function (o, index, array, whereArray) {
+                    for (var i = 0; i < whereArray.length; i++) {
+                        if (eq(o, whereArray[i], val)) {
+                            return false;
+                        }
+                    }
+                    return true
+                }
+
+
+                return this.where(keyFn);
+            }
+        }
+
+        if (!arrayPrototype.addRange) {
+            arrayPrototype.addRange = function (array, append, key) {
+                var keyObj = key ? {} : false;
+                for (var i = 0; i < array.length; i++) {
+                    if (keyObj) {
+                        keyObj[key] = array[i][key];
+                        if (this.any(keyObj)) {
+                            continue;
+                        }
+                    }
+                    if (append !== false) {
+                        this.push(array[i]);
+                    }
+                    else {
+                        this.unshift(array[i])
+                    }
+                }
+                return this;
+            }
+        }
+
+        if (!arrayPrototype.removeAll) {
+            arrayPrototype.removeAll = function (fn) {
+
+                var me = this, remove = [];
+
+                var arrayRemove = me.where(fn);
+
+                for (var j = 0; j < arrayRemove.length; j++) {
+                    for (var i = 0; i < me.length; i++) {
+                        if (me[i] == arrayRemove[j]) {
+                            me.removeAt(i);
+                            break;
+                        }
+                    }
+                }
+
+                return me;
+            }
+        }
+    }
+}]);
